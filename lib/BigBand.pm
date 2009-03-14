@@ -4,39 +4,64 @@ use Audio::XMMSClient;
 use KiokuDB;
 
 use BigBand::Sample;
+use BigBand::Sampler;
 
-has 'xmms' => (
-    is       => 'ro',
-    isa      => 'Audio::XMMSClient',
-    required => 1,
-    default  => sub {
-        my $xmms = Audio::XMMSClient->new('bigband');
-        $xmms->connect;
-        return $xmms;
-    },
-    documentation => 'XMMS server to monitor',
-);
+use Time::HiRes qw(nanosleep);
+
+use feature 'switch';
+use constant STOP  => 2;
+use constant PLAY  => 1;
+use constant PAUSE => 0;
+
+use namespace::clean -except => 'meta';
+with 'MooseX::LogDispatch';
 
 has 'kioku' => (
     is       => 'ro',
     isa      => 'KiokuDB',
     required => 1,
+    default  => sub {
+        KiokuDB->connect('hash'),
+    },
 );
 
-has 'current_song_id' => (
-    is            => 'rw',
-    isa           => 'Int',
-    predicate     => 'has_current_song_id',
-    documentation => 'caches the ID of the currently-playing song; internal-use only',
+has 'xmms' => (
+    is         => 'ro',
+    isa        => 'Audio::XMMSClient',
+    lazy_build => 1,
+    handles    => [qw/loop/], # enter event loop
 );
 
-has 'last_sample' => (
-    is            => 'rw',
-    isa           => 'BigBand::Sample',
-    predicate     => 'has_last_sample',
-    clearer       => 'clear_last_sample',
-    documentation => 'caches the last simple, so we can maintain a linked list structure',
+sub _build_xmms {
+    my $self = shift;
+    my $xmms = Audio::XMMSClient->new('bigband');
+    $xmms->connect;
+    return $xmms;
+}
+
+has 'sampler' => (
+    is         => 'ro',
+    isa        => 'BigBand::Sampler',
+    lazy_build => 1,
 );
+
+sub _build_sampler {
+    my $self = shift;
+
+    my $sampler = BigBand::Sampler->new(
+        logger          => $self->logger,
+        sample_callback => sub {
+            $self->sample(@_);
+        },
+    );
+
+    my $r = $self->xmms->playback_current_id;
+    $r->wait;
+    my $current_song_id = $r->value;
+    $sampler->recv_song_change($current_song_id) if $current_song_id;
+
+    return $sampler;
+}
 
 has [qw/pause_watcher current_song_id_watcher playtime_watcher/] => (
     is         => 'ro',
@@ -47,12 +72,22 @@ sub _build_pause_watcher {
     my $self = shift;
     my $w = $self->xmms->broadcast_playback_status();
     $w->notifier_set(sub {
-         my $event = shift;
-         if($event == 0){
-             warn "clear last sample";
-             $self->clear_last_sample;
-         }
-     });
+        my $event = shift;
+
+        given($event){
+            when(STOP){
+                $self->sampler->recv_stop;
+            }
+            when(PAUSE){
+                $self->sampler->recv_pause;
+            }
+            when(PLAY){
+                $self->sampler->recv_play;
+            }
+        }
+
+        return 1;
+    });
     return $w;
 }
 
@@ -60,9 +95,9 @@ sub _build_current_song_id_watcher {
     my $self = shift;
     my $w = $self->xmms->broadcast_playback_current_id;
     $w->notifier_set(sub {
-         warn "current song is @_";
-         $self->current_song_id($_[0]),
-     });
+        $self->sampler->recv_song_change(@_);
+        return 1;
+    });
     return $w;
 }
 
@@ -70,7 +105,8 @@ sub _build_playtime_watcher {
     my $self = shift;
     my $w = $self->xmms->signal_playback_playtime;
     $w->notifier_set(sub {
-         $self->record_playback_tick($_[0]);
+         $self->sampler->recv_playback_tick($_[0]);
+         return 1; # trigger restart
      });
     return $w;
 }
@@ -78,39 +114,30 @@ sub _build_playtime_watcher {
 sub BUILD {
     my $self = shift;
 
-    my $r = $self->xmms->playback_current_id;
-    $r->wait;
-    $self->current_song_id($r->value);
-
     $self->pause_watcher;
     $self->current_song_id_watcher;
     $self->playtime_watcher;
 }
 
-sub record_playback_tick {
-    my ($self, $song_time) = @_;
+sub sample {
+    my ($self, $sample) = @_;
+    $self->logger->debug("Recording sample: ", join ' ', (map { $sample->$_ } qw/sample_taken song_id start duration/));
 
-    my $s = $self->kioku->new_scope;
-
-    my $sample = BigBand::Sample->new(
-        song_id         => $self->current_song_id,
-        song_time       => $song_time,
-
-        $self->has_last_sample ? (
-            previous_sample => $self->last_sample,
-        ) : (),
-    );
-
-    if($self->has_last_sample){
-        $self->last_sample->next_sample($sample);
+    if(!$sample->has_previous_sample){
+        $self->logger->debug('Fresh lineage.');
     }
 
+    my $s = $self->kioku->new_scope;
     $self->kioku->txn_do(sub {
-        $self->kioku->insert($sample);
-        $self->kioku->update($self->last_sample) if $self->has_last_sample;
+        # ensure that only "beginning" samples become part of the root
+        # set.
+        # if($sample->has_previous_sample){
+        #     $self->kioku->update($sample->previous_sample);
+        # }
+        # else {
+            $self->kioku->insert($sample);
+        # }
     });
-
-    $self->last_sample($sample);
 }
 
 1;
