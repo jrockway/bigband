@@ -1,23 +1,44 @@
 package BigBand::Script::SongSummaryWeb;
 use 5.010;
+use Moose;
+
+use Audio::XMMSClient;
 use BigBand::Report::Driver;
 use BigBand::Report::Histogram;
 use BigBand;
+use Chart::Clicker::Data::DataSet;
+use Chart::Clicker::Data::Series;
+use Chart::Clicker;
 use Data::Section '-setup';
+use Encode qw(decode_utf8);
+use HTML::Document::Header;
+use HTML::Document;
 use HTTP::Engine;
-use Moose;
+use KiokuDB;
+use POE;
 use Path::Router;
 use Template::Refine::Fragment;
 use Template::Refine::Processor::Rule::Select::CSS;
 use Template::Refine::Processor::Rule::Transform::Replace;
 use Template::Refine::Processor::Rule;
-use Chart::Clicker;
-use Chart::Clicker::Data::Series;
-use Chart::Clicker::Data::DataSet;
-use Template::Refine::Utils qw(simple_replace replace_text);
+use Template::Refine::Utils ':all';
 
+use namespace::clean -except => [qw/meta section_data/];
 
 with 'BigBand::Script::WithKioku';
+
+has 'xmms' => (
+    is         => 'ro',
+    isa        => 'Audio::XMMSClient',
+    lazy_build => 1,
+);
+
+sub _build_xmms {
+    my $self = shift;
+    my $xmms = Audio::XMMSClient->new('bigband');
+    $xmms->connect;
+    return $xmms;
+}
 
 has 'engine' => (
     is         => 'ro',
@@ -144,7 +165,7 @@ sub index_page {
 
     my @songs = $self->get_report('histogram')->available_songs;
     my @histograms =
-      grep { scalar @{$_->[1]} > 10 } # 30 seconds of data
+      grep { scalar @{$_->[1]} > 3 }
       map { [ $_, $self->get_report('histogram')->histogram_for($_) ] } @songs;
 
     my @images = map { $self->_one_histogram_image($req, $_->[0]) } @histograms;
@@ -169,9 +190,13 @@ sub index_page {
         ),
     );
 
-    return $self->response(
-        body => '<html><head><title>Index</title></head><body>'.$f->render.'</body></html>',
+    my $doc = HTML::Document->new(
+        header => HTML::Document::Header->new(
+            title => 'Index',
+        ),
     );
+    $doc->add_fragment( $f->render );
+    return $self->response( body => $doc->render );
 }
 
 sub song_image {
@@ -213,9 +238,7 @@ sub _one_histogram_image {
 
     $f = $f->process(
         Template::Refine::Processor::Rule->new(
-            selector => Template::Refine::Processor::Rule::Select::CSS->new(
-                pattern => 'img.histogram_img',
-            ),
+            selector    => css 'img.histogram_img',
             transformer => Template::Refine::Processor::Rule::Transform::Replace->new(
                 replacement => sub {
                     my $node = shift;
@@ -228,11 +251,19 @@ sub _one_histogram_image {
         ),
         simple_replace {
             my $node = shift;
-            replace_text $node, "Song $song_id";
-        } '//p',
+            replace_text $node, $self->_song_title($song_id);
+        } css '.song_title',
     );
 
     return $f->fragment;
+}
+
+sub _song_title {
+    my ($self, $id) = @_;
+    my $res = $self->xmms->medialib_get_info($id);
+    $res->wait;
+    my ($plugin, $name) = %{ $res->value->{title} || {}};
+    return decode_utf8($name);
 }
 
 1;
@@ -245,7 +276,7 @@ __[index]__
   The histograms go here.
 </div>
 __[one_histogram]__
-<div class="histogram">
-<img class="histogram_img" src="" />
-<p class="histogram_label">The label goes here</p>
+<div class="histogram" style="float:left;">
+<h2 class="song_title">The label goes here</h2>
+<a class="histogram_link"><img class="histogram_img" src="" /></a>
 </div>
