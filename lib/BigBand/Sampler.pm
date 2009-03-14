@@ -85,24 +85,28 @@ sub DEMOLISH {
 
 ## event handlers
 
+sub _end_chain {
+    my $self = shift;
+    $self->send_current_sample if $self->has_current_sample;
+    $self->clear_last_sample if $self->has_last_sample;
+}
+
 sub recv_quit {
     my $self = shift;
     $self->logger->debug("quit");
-    $self->send_current_sample if $self->has_current_sample;
+    $self->_end_chain;
 }
 
 sub recv_pause {
     my $self = shift;
     $self->logger->debug("pause");
-    $self->send_current_sample;
-    $self->clear_last_sample;
+    $self->_end_chain;
 }
 
 sub recv_stop {
     my $self = shift;
     $self->logger->debug("stop");
-    $self->send_current_sample;
-    $self->clear_last_sample;
+    $self->_end_chain;
 }
 
 sub recv_play {

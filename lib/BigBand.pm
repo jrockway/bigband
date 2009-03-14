@@ -9,9 +9,9 @@ use BigBand::Sampler;
 use Time::HiRes qw(nanosleep);
 
 use feature 'switch';
-use constant STOP  => 2;
+use constant STOP  => 0;
 use constant PLAY  => 1;
-use constant PAUSE => 0;
+use constant PAUSE => 2;
 
 use namespace::clean -except => 'meta';
 with 'MooseX::LogDispatch';
