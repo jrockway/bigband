@@ -135,7 +135,8 @@ sub sample {
         #     $self->kioku->update($sample->previous_sample);
         # }
         # else {
-            $self->kioku->insert($sample);
+        $self->kioku->insert($sample);
+        $self->kioku->update($sample->previous_sample) if $sample->has_previous_sample;
         # }
     });
 }
