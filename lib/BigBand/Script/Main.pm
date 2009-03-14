@@ -5,17 +5,8 @@ use MooseX::Types::Path::Class;
 use BigBand;
 use Log::Dispatch;
 use Log::Dispatch::Screen;
-use KiokuDB;
 
-with 'MooseX::Getopt';
-
-has 'storage' => (
-    is            => 'ro',
-    isa           => 'Path::Class::Dir',
-    required      => 1,
-    coerce        => 1,
-    documentation => 'directory where the database will live (created if necessary)',
-);
+with 'BigBand::Script::WithKioku';
 
 has 'log_level' => (
     is            => 'ro',
@@ -24,19 +15,6 @@ has 'log_level' => (
     default       => sub { 'debug' },
     documentation => 'level of messages to log; defaults to "debug"',
 );
-
-has 'kioku' => (
-    traits     => ['NoGetopt'],
-    is         => 'ro',
-    lazy_build => 1,
-);
-
-sub _build_kioku {
-    my $self = shift;
-    my $dir = $self->storage;
-    my $db = KiokuDB->connect("bdb:dir=$dir", create => 1);
-    return $db;
-}
 
 has 'logger' => (
     traits     => ['NoGetopt'],
