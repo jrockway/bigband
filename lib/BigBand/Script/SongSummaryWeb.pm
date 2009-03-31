@@ -25,7 +25,7 @@ use Template::Refine::Utils ':all';
 
 use namespace::clean -except => [qw/meta section_data/];
 
-with 'BigBand::Script::WithKioku';
+with 'BigBand::Script', 'BigBand::Script::WithKioku';
 
 has 'xmms' => (
     is         => 'ro',

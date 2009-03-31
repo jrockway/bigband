@@ -4,8 +4,6 @@ use MooseX::Types::Path::Class;
 
 use KiokuDB;
 
-with 'MooseX::Getopt';
-
 has 'storage' => (
     is            => 'ro',
     isa           => 'Path::Class::Dir',

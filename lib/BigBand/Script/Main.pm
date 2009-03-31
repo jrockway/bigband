@@ -6,7 +6,7 @@ use BigBand;
 use Log::Dispatch;
 use Log::Dispatch::Screen;
 
-with 'BigBand::Script::WithKioku';
+with 'BigBand::Script', 'BigBand::Script::WithKioku';
 
 has 'log_level' => (
     is            => 'ro',

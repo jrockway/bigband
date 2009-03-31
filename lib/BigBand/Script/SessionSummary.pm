@@ -5,7 +5,7 @@ use BigBand;
 
 use 5.010;
 
-with 'BigBand::Script::WithKioku';
+with 'BigBand::Script', 'BigBand::Script::WithKioku';
 
 sub run {
     my $self = shift;
