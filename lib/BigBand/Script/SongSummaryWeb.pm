@@ -2,7 +2,7 @@ package BigBand::Script::SongSummaryWeb;
 use 5.010;
 use Moose;
 
-use Audio::XMMSClient;
+use Audio::XMMSClient::AnyEvent;
 use BigBand::Report::Driver;
 use BigBand::Report::Histogram;
 use BigBand;
@@ -35,7 +35,7 @@ has 'xmms' => (
 
 sub _build_xmms {
     my $self = shift;
-    my $xmms = Audio::XMMSClient->new('bigband');
+    my $xmms = Audio::XMMSClient::AnyEvent->new('bigband');
     $xmms->connect;
     return $xmms;
 }
@@ -123,12 +123,12 @@ sub _build_reports {
     return $reports;
 }
 
-
 sub run {
     my $self = shift;
     my $e = $self->engine;
-    say "Server started at http://", $e->interface->host, ":", $e->interface->port;
+    $self->xmms; # vivify the xmms connection early, since connect curently blocks
     $e->run;
+    say "Server started at http://", $e->interface->host, ":", $e->interface->port;
     POE::Kernel->run;
 }
 
@@ -196,6 +196,7 @@ sub index_page {
         ),
     );
     $doc->add_fragment( $f->render );
+    $self->clear_reports;
     return $self->response( body => $doc->render );
 }
 

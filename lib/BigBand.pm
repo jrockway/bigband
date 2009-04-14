@@ -1,6 +1,6 @@
 package BigBand;
 use Moose;
-use Audio::XMMSClient;
+use Audio::XMMSClient::AnyEvent;
 use KiokuDB;
 
 use BigBand::Sample;
@@ -29,12 +29,11 @@ has 'xmms' => (
     is         => 'ro',
     isa        => 'Audio::XMMSClient',
     lazy_build => 1,
-    handles    => [qw/loop/], # enter event loop
 );
 
 sub _build_xmms {
     my $self = shift;
-    my $xmms = Audio::XMMSClient->new('bigband');
+    my $xmms = Audio::XMMSClient::AnyEvent->new('bigband');
     $xmms->connect;
     return $xmms;
 }
@@ -139,6 +138,10 @@ sub sample {
         $self->kioku->update($sample->previous_sample) if $sample->has_previous_sample;
         # }
     });
+}
+
+sub loop {
+    AnyEvent->condvar->recv;
 }
 
 1;

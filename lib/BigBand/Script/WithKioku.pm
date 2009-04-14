@@ -3,6 +3,7 @@ use Moose::Role;
 use MooseX::Types::Path::Class;
 
 use KiokuDB;
+use KiokuDB::Backend::BDB;
 
 has 'storage' => (
     is            => 'ro',
